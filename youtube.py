@@ -1,3 +1,4 @@
+# LIBRARY
 from googleapiclient.discovery import build
 import pymongo
 from pymongo import MongoClient
@@ -8,13 +9,10 @@ import streamlit as st
 # API KEY CONNECTION
 def Api_connect():
   Api_id="AIzaSyCDOgXyTd_j1k3AEWrCaVFvRTeoJA8mvcg"
-
   api_service_name="youtube"
   api_version="v3"
-
   youtube=build(api_service_name, api_version, developerKey=Api_id)
   return youtube
-
 youtube=Api_connect()
 
 # GET CHANNEL INFORMATIONS
@@ -35,16 +33,13 @@ def get_channel_info(channel_id):
               Playlist_Id=i["contentDetails"]["relatedPlaylists"]["uploads"])
     return data
 
-
 # GET VIDEO ID's
 def get_videos_ids(channel_id):
   video_ids=[]
   response=youtube.channels().list(id=channel_id,
                                   part="contentDetails").execute()
   Playlist_Id=response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
-
   next_page_token=None
-
   while True:
     response1=youtube.playlistItems().list(
                                           part="snippet",
@@ -57,6 +52,7 @@ def get_videos_ids(channel_id):
       break
   return video_ids
 
+# GET VIDEO INFORMATIONS
 def get_video_info(video_ids):
     video_data = []
     for video_id in video_ids:
@@ -85,7 +81,6 @@ def get_video_info(video_ids):
             )
             video_data.append(data)
     return video_data
-
 
 # GET COMMENT INFORMATIONS
 def get_comment_info(video_ids):
@@ -137,7 +132,6 @@ def get_playlist_details(channel_id):
       break
   return All_data
 
-
 # CONNECTING MONGODB
 client = pymongo.MongoClient("mongodb+srv://dharan:sumithra@dharanikumark.b0rt3.mongodb.net/?retryWrites=true&w=majority&appName=DharanikumarK")
 db=client["Youtube_Data"]
@@ -154,11 +148,11 @@ def channel_details(channel_id):
 
   return "Uploaded Successfully"
 
-
+# CREATE CHANNEL TABLE
 import mysql.connector
 import pandas as pd
 from pymongo import MongoClient
-def channels_table():
+def channels_table(channel_name_s):
     # Connect to MySQL database
     mydb = mysql.connector.connect(
         host="localhost",
@@ -169,47 +163,29 @@ def channels_table():
     )
     mycursor = mydb.cursor(buffered=True)
 
-    drop_query = '''drop table if exists channels'''
-    mycursor.execute(drop_query)
+    # Create the channels table if it doesn't exist
+    create_query = '''CREATE TABLE IF NOT EXISTS channels (
+                          Channel_Name VARCHAR(100),
+                          Channel_Id VARCHAR(80) PRIMARY KEY,
+                          Subscribers BIGINT,
+                          Views BIGINT,
+                          Total_Videos INT,
+                          Channel_Description TEXT,
+                          Playlist_Id VARCHAR(80))'''
+
+    mycursor.execute(create_query)
     mydb.commit()
 
-    # Create the channels table if it doesn't exist
-    try:
-        create_query = '''create table if not exists channels (
-                            Channel_Name VARCHAR(100),
-                            Channel_Id VARCHAR(80) PRIMARY KEY,
-                            Subscribers BIGINT,
-                            Views BIGINT,
-                            Total_Videos INT,
-                            Channel_Description TEXT,
-                            Playlist_Id VARCHAR(80))'''
-
-        mycursor.execute(create_query)
-        mydb.commit()
-
-    except Exception as e:
-        print(f"Error creating table: {e}")
-
-    return mydb, mycursor
-
-def fetch_data_from_mongo():
-    # Connect to MongoDB
-    client = MongoClient("mongodb+srv://dharan:sumithra@dharanikumark.b0rt3.mongodb.net/?retryWrites=true&w=majority&appName=DharanikumarK")
+    single_channel_details=[]
     db = client["Youtube_Data"]
     collection1 = db["channel_details"]
+    for ch_data in collection1.find({"channel_information.Channel_Name": channel_name_s }, {"_id": 0}):
+      single_channel_details.append(ch_data["channel_information"])
+    df_single_channel_detail=pd.DataFrame(single_channel_details)
 
-    ch_list = []
-    for ch_data in collection1.find({}, {"_id": 0, "channel_information": 1}):
-        ch_list.append(ch_data["channel_information"])
-
-    # Convert the list of channel data to a DataFrame
-    df = pd.DataFrame(ch_list)
-    return df
-
-def insert_into_mysql(df, mycursor, mydb):
     # Iterate over the rows in the DataFrame and insert into MySQL
-    for index, row in df.iterrows():
-        insert_query = '''insert into channels (
+    for index, row in df_single_channel_detail.iterrows():
+        insert_query = '''INSERT INTO channels (
                                                 Channel_Name,
                                                 Channel_Id,
                                                 Subscribers,
@@ -228,27 +204,18 @@ def insert_into_mysql(df, mycursor, mydb):
             row["Channel_Description"],
             row["Playlist_Id"]
         )
-
         try:
-            mycursor.execute(insert_query, values)
-            mydb.commit()
-        except Exception as e:
-            print(f"Error inserting data for {row['Channel_Name']}: {e}")
+          mycursor.execute(insert_query, values)
+          mydb.commit()
+        except:
+            news=f"Your Provided Channel Name {channel_name_s} is Already Exists"
+            return news
 
-# Main code to run the process
-# Step 1: Create table and get the connection objects
-mydb, mycursor = channels_table()
-# Step 2: Fetch data from MongoDB
-df = fetch_data_from_mongo()
-# Step 3: Insert data into MySQL
-insert_into_mysql(df, mycursor, mydb)
-
-
+# CREATE PLAYLIST TABLE
 import mysql.connector
 import pandas as pd
 from pymongo import MongoClient
-
-def playlist_table():
+def playlist_table(channel_name_s):
     # Connect to MySQL database
     mydb = mysql.connector.connect(
         host="localhost",
@@ -258,12 +225,7 @@ def playlist_table():
         port="3306"
     )
     mycursor = mydb.cursor(buffered=True)
-
-    drop_query = '''DROP TABLE IF EXISTS playlists'''
-    mycursor.execute(drop_query)
-    mydb.commit()
-
-    # Create the playlists table if it doesn't exist
+# Create the playlists table if it doesn't exist
     create_query = '''CREATE TABLE IF NOT EXISTS playlists (
                                                             Playlist_Id VARCHAR(100) PRIMARY KEY,
                                                             Title VARCHAR(100),
@@ -274,68 +236,42 @@ def playlist_table():
     mycursor.execute(create_query)
     mydb.commit()
 
-    def fetch_data_from_mongo():
-        # Connect to MongoDB
-        client = MongoClient("mongodb+srv://dharan:sumithra@dharanikumark.b0rt3.mongodb.net/?retryWrites=true&w=majority&appName=DharanikumarK")
-        db = client["Youtube_Data"]
-        collection1 = db["channel_details"]
+    single_playlist_details=[]
+    db = client["Youtube_Data"]
+    collection1 = db["channel_details"]
+    for ch_data in collection1.find({"channel_information.Channel_Name": channel_name_s }, {"_id": 0}):
+      single_playlist_details.append(ch_data["playlist_information"])
+    df_single_playlist_detail=pd.DataFrame(single_playlist_details[0])
 
-        pl_list = []
-        for pl_data in collection1.find({}, {"_id": 0, "playlist_information": 1}):
-            if "playlist_information" in pl_data:
-                for pl in pl_data["playlist_information"]:
-                    pl_list.append(pl)
+# Insert data into MySQL
+    for index, row in df_single_playlist_detail.iterrows():
+        try:
+            # Prepare the query and the data to insert
+            insert_query = '''INSERT INTO playlists(
+                                                Playlist_Id,
+                                                Title,
+                                                Channel_Id,
+                                                Channel_Name,
+                                                Video_Count
+                                            ) VALUES (%s, %s, %s, %s, %s)'''
+            values = (
+                row['Playlist_Id'],
+                row['Title'],
+                row['Channel_Id'],
+                row['Channel_Name'],
+                row['Video_Count']
+            )
+            # Execute the insert query
+            mycursor.execute(insert_query, values)
+            mydb.commit()
+        except:
+            print("Playlist values are already inserted")
 
-        # Check if data is fetched from MongoDB
-        if not pl_list:
-            print("No playlist information found in MongoDB.")
-            return
-
-        # Convert the list of playlist data to a DataFrame
-        df1 = pd.DataFrame(pl_list)
-
-        # Ensure that DataFrame is not empty
-        if df1.empty:
-            print("DataFrame is empty.")
-            return
-
-        # Insert data into MySQL
-        for index, row in df1.iterrows():
-            try:
-                # Prepare the query and the data to insert
-                insert_query = '''INSERT INTO playlists(
-                                                    Playlist_Id,
-                                                    Title,
-                                                    Channel_Id,
-                                                    Channel_Name,
-                                                    Video_Count
-                                                ) VALUES (%s, %s, %s, %s, %s)'''
-                values = (
-                    row['Playlist_Id'],
-                    row['Title'],
-                    row['Channel_Id'],
-                    row['Channel_Name'],
-                    row['Video_Count']
-                )
-                # Execute the insert query
-                mycursor.execute(insert_query, values)
-                mydb.commit()
-            except Exception as e:
-                print(f"Error inserting data for Playlist_Id {row['Playlist_Id']}: {e}")
-                mydb.rollback()
-
-    # Fetch data from MongoDB and insert into MySQL
-    fetch_data_from_mongo()
-
-# Call the function to insert playlist data into MySQL
-playlist_table()
-
-
+# CREATE VIDEOS TABLE
 import mysql.connector
 import pandas as pd
 from pymongo import MongoClient
-
-def videos_tables():
+def videos_tables(channel_name_s):
     # Connect to MySQL database
     mydb = mysql.connector.connect(
         host="localhost",
@@ -346,12 +282,7 @@ def videos_tables():
     )
     mycursor = mydb.cursor(buffered=True)
 
-    # Drop the existing table if exists
-    drop_query = '''DROP TABLE IF EXISTS videos'''
-    mycursor.execute(drop_query)
-    mydb.commit()
-
-    # Create the videos table if it doesn't exist
+# Create the videos table if it doesn't exist
     create_query = '''CREATE TABLE IF NOT EXISTS videos (
         Channel_Name VARCHAR(100),
         Channel_Id VARCHAR(100),
@@ -368,28 +299,15 @@ def videos_tables():
     mycursor.execute(create_query)
     mydb.commit()
 
-    # Fetch data from MongoDB
-    def fetch_data_from_mongo():
-        # Connect to MongoDB
-        client = MongoClient("mongodb+srv://dharan:sumithra@dharanikumark.b0rt3.mongodb.net/?retryWrites=true&w=majority&appName=DharanikumarK")
-        db = client["Youtube_Data"]
-        collection1 = db["channel_details"]
-
-        vi_list = []
-        # Fetch video data
-        for vi_data in collection1.find({}, {"_id": 0, "video_information": 1}):
-            for i in range(len(vi_data["video_information"])):
-                vi_list.append(vi_data["video_information"][i])
-
-        # Convert to DataFrame
-        df2 = pd.DataFrame(vi_list)
-        return df2
-
-    df2 = fetch_data_from_mongo()
+    single_videos_details=[]
+    db = client["Youtube_Data"]
+    collection1 = db["channel_details"]
+    for ch_data in collection1.find({"channel_information.Channel_Name": channel_name_s}, {"_id": 0}):
+        single_videos_details.append(ch_data["video_information"])
+    df_single_playlist_detail=pd.DataFrame(single_videos_details[0])
 
     # Insert data into MySQL
-    def insert_into_mysql(df2, mycursor, mydb):
-        for index, row in df2.iterrows():
+    for index, row in df_single_playlist_detail.iterrows():
             insert_query = '''INSERT INTO videos(
                 Channel_Name,
                 Channel_Id,
@@ -421,23 +339,13 @@ def videos_tables():
 
             # Execute the insert query
             mycursor.execute(insert_query, values)
+            mydb.commit()
 
-        # Commit the transaction after all inserts
-        mydb.commit()
-
-    insert_into_mysql(df2, mycursor, mydb)
-
-    # Close MySQL connection
-    mycursor.close()
-    mydb.close()
-# Call the function
-videos_tables()
-
+# CREATE COMMENT TABLE
 import mysql.connector
 import pandas as pd
 from pymongo import MongoClient
-
-def comment_table():
+def comment_table(channel_name_s):
     # Connect to MySQL database
     mydb = mysql.connector.connect(
         host="localhost",
@@ -447,11 +355,6 @@ def comment_table():
         port="3306"
     )
     mycursor = mydb.cursor(buffered=True)
-
-    # Drop the comments table if it exists
-    drop_query = '''DROP TABLE IF EXISTS comments'''
-    mycursor.execute(drop_query)
-    mydb.commit()
 
     # Create the comments table if it doesn't exist
     create_query = '''CREATE TABLE IF NOT EXISTS comments (
@@ -464,35 +367,15 @@ def comment_table():
     mycursor.execute(create_query)
     mydb.commit()
 
-    def fetch_data_from_mongo():
-        # Connect to MongoDB
-        client = MongoClient("mongodb+srv://dharan:sumithra@dharanikumark.b0rt3.mongodb.net/?retryWrites=true&w=majority&appName=DharanikumarK")
-        db = client["Youtube_Data"]
-        collection1 = db["channel_details"]
+    single_comments_details=[]
+    db = client["Youtube_Data"]
+    collection1 = db["channel_details"]
+    for ch_data in collection1.find({"channel_information.Channel_Name": channel_name_s }, {"_id": 0}):
+        single_comments_details.append(ch_data["comment_information"])
+    df_single_comments_details=pd.DataFrame(single_comments_details[0])
 
-        com_list = []
-        # Fetching comment data from MongoDB
-        for com_data in collection1.find({}, {"_id": 0, "comment_information": 1}):
-            if "comment_information" in com_data:
-                for com in com_data["comment_information"]:
-                    com_list.append(com)
-
-        # Check if data is fetched from MongoDB
-        if not com_list:
-            print("No comment information found in MongoDB.")
-            return
-
-        # Convert the list of comment data to a DataFrame
-        df3 = pd.DataFrame(com_list)
-
-        # Ensure that DataFrame is not empty
-        if df3.empty:
-            print("DataFrame is empty.")
-            return
-
-        # Insert data into MySQL
-        for index, row in df3.iterrows():
-            try:
+    # Insert data into MySQL
+    for index, row in df_single_comments_details.iterrows():
                 # Prepare the query and the data to insert
                 insert_query = '''INSERT INTO comments(
                                                         Comment_Id,
@@ -508,29 +391,24 @@ def comment_table():
                     row['Comment_Author']
                     # row['Comment_Published_At']  # You can add this later once the field is available
                 )
-                # Execute the insert query
+# Execute the insert query
                 mycursor.execute(insert_query, values)
                 mydb.commit()
-            except Exception as e:
-                print(f"Error inserting data for Comment_Id {row['Comment_Id']}: {e}")
-                mydb.rollback()
 
-    # Fetch data from MongoDB and insert into MySQL
-    fetch_data_from_mongo()
+# CREATE ALL FUNTION TABLE IN ONE PLACE
+def tables(single_channel):
+    news=channels_table(single_channel)
 
-# Call the function to insert comment data into MySQL
-comment_table()
+    if news:
+      return news
 
-def tables():
-    channels_table()
-    playlist_table()
-    videos_tables()
-    comment_table()
-
-    return "Table Created Successfully"
+    else:
+      playlist_table(single_channel)
+      videos_tables(single_channel)
+      comment_table(single_channel)
+      return "Table Created Successfully"
 
 def show_channels_table():
-
   ch_list = []
   db = client["Youtube_Data"]
   collection1 = db["channel_details"]
@@ -538,11 +416,9 @@ def show_channels_table():
       # for i in range(len(ch_data["channel_information"])):
         ch_list.append(ch_data["channel_information"])
   df = st.dataframe(ch_list)
-
   return df
 
 def show_playlists_table():
-
   pl_list = []
   db = client["Youtube_Data"]
   collection1 = db["channel_details"]
@@ -550,26 +426,19 @@ def show_playlists_table():
       for i in range(len(pl_data["playlist_information"])):
         pl_list.append(pl_data["playlist_information"][i])
   df1 = st.dataframe(pl_list)
-
   return df1
 
 def show_videos_table():
-
   vi_list = []
   db = client["Youtube_Data"]
   collection1 = db["channel_details"]
   for vi_data in collection1.find({}, {"_id": 0, "video_information": 1}):
-      # if "playlist_information" in pl_data:
-          # for pl in pl_data["playlist_information"][i]:
-              # pl_list.append(pl)
       for i in range(len(vi_data["video_information"])):
         vi_list.append(vi_data["video_information"][i])
   df2 = st.dataframe(vi_list)
-
   return df2
 
 def show_comments_table():
-
   com_list = []
   db = client["Youtube_Data"]
   collection1 = db["channel_details"]
@@ -577,9 +446,7 @@ def show_comments_table():
       for i in range(len(com_data["comment_information"])):
         com_list.append(com_data["comment_information"][i])
   df3 = st.dataframe(com_list)
-
   return df3
-
 
 # STREAMLIT
 with st.sidebar:
@@ -598,7 +465,7 @@ if st.button("collect and store data"):
     db=client["Youtube_Data"]
     collection1=db["channel_details"]
     for ch_data in collection1.find({},{"_id":0,"channel_information":1}):
-        ch_ids.append(ch_data["channel_information"]["Channel Id"])
+        ch_ids.append(ch_data["channel_information"]["Channel_Id"])
 
     if channel_id in ch_ids:
       st.success("Already have channel ID")
@@ -607,10 +474,16 @@ if st.button("collect and store data"):
       insert=channel_details(channel_id)
       st.success(insert)
 
-unique_Channel=st.selectbox("Select the Channel",["channel1", "channel2"] )
+all_channels=[]
+db = client["Youtube_Data"]
+collection1 = db["channel_details"]
+for ch_data in collection1.find({}, {"_id": 0, "channel_information": 1}):
+    all_channels.append(ch_data["channel_information"]["Channel_Name"])
+
+unique_Channel=st.selectbox("Select the Channel",all_channels )
 
 if st.button("Migrate to Sql"):
-  Table=tables()
+  Table=tables(unique_Channel)
   st.success(Table)
 
 show_table=st.radio("SELECT THE TABLE FOR VIEW",("CHANNELS", "PLAYLIST", "VIDEOS", "COMMENTS"))
